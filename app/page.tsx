@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { NavLink } from "@/components/nav-link";
 
 export default function Home() {
   return (
@@ -11,18 +11,18 @@ export default function Home() {
         </p>
       </div>
       <div className="flex gap-4">
-        <Link
+        <NavLink
           href="/practice"
           className="rounded-full bg-foreground px-6 py-3 font-medium text-background transition-opacity hover:opacity-80"
         >
           开始练习
-        </Link>
-        <Link
+        </NavLink>
+        <NavLink
           href="/graph"
           className="rounded-full border border-zinc-300 px-6 py-3 font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
         >
           能力图谱
-        </Link>
+        </NavLink>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { NavLink } from "@/components/nav-link";
 import { db } from "@/lib/db";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { misconceptions, skillNodes } from "@/lib/db/schema";
@@ -108,9 +108,9 @@ export default async function GraphPage() {
         </section>
       ))}
 
-      <Link href="/practice" className="text-sm font-medium text-blue-600 hover:underline">
+      <NavLink href="/practice" className="text-sm font-medium text-blue-600 hover:underline">
         去练习 →
-      </Link>
+      </NavLink>
     </div>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FrameStepper } from "@/components/frame-stepper";
 import { Markdown } from "@/components/markdown";
+import { NavLink } from "@/components/nav-link";
 import type { QuestionType } from "@/lib/ai/generate-question";
 import type { VisualExplain } from "@/lib/ai/visual-explain";
 import type { SubmitResult } from "@/lib/attempts/submit";
@@ -190,6 +191,16 @@ export function PracticeForm({ question }: { question: PracticeQuestion }) {
   const [visual, setVisual] = useState<VisualExplain | null>(null);
   const [visualErr, setVisualErr] = useState<string | null>(null);
   const [visualPending, startVisualTransition] = useTransition();
+  const router = useRouter();
+  const [navPending, startNavTransition] = useTransition();
+
+  /** 同路由导航不会重新挂起 Suspense（loading.tsx 不触发），
+   *  用 router.refresh() 重跑服务端出题，pending 由 transition 提供 */
+  function onNextQuestion() {
+    startNavTransition(() => {
+      router.refresh();
+    });
+  }
 
   const needsBool = question.type === "compile_outcome" || question.type === "panic_prediction";
   const needsText = ["exact_output", "error_type", "minimal_fix"].includes(question.type);
@@ -464,18 +475,27 @@ export function PracticeForm({ question }: { question: PracticeQuestion }) {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <Link
-              href="/practice"
-              className="rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background transition-opacity hover:opacity-80"
+            <button
+              type="button"
+              onClick={onNextQuestion}
+              disabled={navPending}
+              className="rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              下一题（按图谱自适应选题）
-            </Link>
-            <Link
+              {navPending ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  选题出题中…（通常 30-60 秒）
+                </span>
+              ) : (
+                "下一题（按图谱自适应选题）"
+              )}
+            </button>
+            <NavLink
               href="/graph"
               className="rounded-full border border-zinc-300 px-5 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
             >
               查看能力图谱
-            </Link>
+            </NavLink>
           </div>
         </div>
       )}
