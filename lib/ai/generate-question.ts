@@ -2,11 +2,14 @@ import { deepseek } from "@ai-sdk/deepseek";
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { questions, skillNodes } from "@/lib/db/schema";
+import { attempts, questions, misconceptions, skillNodes } from "@/lib/db/schema";
+import { answerSchema, type Answer } from "@/lib/questions/answer";
+import { stripCodeFences } from "@/lib/questions/prompt";
 import { runOnPlaygroundCached, interpret } from "@/lib/playground";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
-export const MODEL_ID = "deepseek-chat";
+/** DeepSeek 当前可用模型：deepseek-flash / deepseek-v4-pro（deepseek-chat 已是指向 flash 的遗留别名） */
+export const MODEL_ID = "deepseek-flash";
 
 export const questionTypes = [
   "compile_outcome",
@@ -18,20 +21,7 @@ export const questionTypes = [
   "concept_reasoning",
 ] as const;
 
-type QuestionType = (typeof questionTypes)[number];
-
-/** finalizeQuestion 提交的预期答案，按题型取用对应字段 */
-const answerSchema = z.object({
-  compiles: z.boolean().optional().describe("compile_outcome：代码能否通过编译"),
-  stdout: z.string().optional().describe("exact_output：程序 stdout 的精确内容"),
-  line: z.number().int().positive().optional().describe("error_location：触发编译错误的行号（从 1 开始）"),
-  errorCode: z.string().optional().describe("error_type：rustc 错误码，如 E0382"),
-  panics: z.boolean().optional().describe("panic_prediction：程序运行时是否会 panic"),
-  fixedCode: z.string().optional().describe("minimal_fix：修复后的完整代码"),
-  keyPoints: z.array(z.string()).optional().describe("concept_reasoning：评分关键点"),
-});
-
-type Answer = z.infer<typeof answerSchema>;
+export type QuestionType = (typeof questionTypes)[number];
 
 export type GenerateMode =
   | { kind: "fresh" }
@@ -167,9 +157,11 @@ async function verifyAnswer(
 
 function buildPrompts(
   skill: typeof skillNodes.$inferSelect,
+  misconceptionDescriptions: string[],
   type: QuestionType,
   mode: GenerateMode,
   basedOn?: typeof questions.$inferSelect,
+  recentCodes?: string[],
 ) {
   const system = `你是 Rust 教学平台的出题引擎。你为目标微技能设计一道练习题，用工具调用完成"草稿 → 编译器验证 → 正式出题"的流程。
 
@@ -179,12 +171,13 @@ function buildPrompts(
 - 流程：先起草代码，然后必须调用 verifyOnPlayground 确认编译器行为符合预期，如有出入就修正代码重新验证，最后才能调用 finalizeQuestion
 - finalizeQuestion 时服务端会再次用 Playground 交叉验证你的 answer，不一致会被拒绝，所以不要猜编译结果，一切以 verifyOnPlayground 的真实返回为准
 - prompt 用中文，简洁清晰，只问题型对应的一个问题，不要混入其他问法，不要出现 answer.xxx 等内部字段名
+- prompt 中【不要包含代码】：代码由平台单独渲染，prompt 只写问题文字，不要夹带 Markdown 代码围栏
 - prompt 绝不预设结论：除非题型本身要求，不得告诉用户代码是否有错、是否会 panic，判断的机会留给用户
 - explanation 用中文解释这道题考察的规则和常见误区`;
 
   const skillInfo = `目标技能：${skill.id}（${skill.titleZh} / ${skill.titleEn}）
 技能说明：${skill.summary}
-典型误区：${skill.misconceptions.length > 0 ? skill.misconceptions.join("；") : "（暂无）"}
+典型误区：${misconceptionDescriptions.length > 0 ? misconceptionDescriptions.join("；") : "（暂无）"}
 题型：${type} —— ${TYPE_GUIDE[type]}`;
 
   const user =
@@ -200,7 +193,10 @@ ${mode.misconception ? `学习者在这道题上暴露的误区：${mode.misconc
 
 请生成一道变种题：考察同一技能的同一规则，但代码场景要明显不同${mode.misconception ? "，并且专门针对上述误区设计迷惑点" : ""}。`
       : `${skillInfo}
-
+${recentCodes && recentCodes.length > 0 ? `
+该学习者近期在这个技能上已经做过以下题目（代码场景），请换一个【明显不同】的场景，避免雷同：
+${recentCodes.map((c, i) => `--- 近期题 ${i + 1} ---\n${c}`).join("\n")}
+` : ""}
 请为该技能生成一道题。`;
 
   return { system, user };
@@ -214,9 +210,15 @@ export async function generateQuestionForSkill(
   skillId: string,
   type: QuestionType,
   mode: GenerateMode = { kind: "fresh" },
+  opts: { userId?: string } = {},
 ): Promise<GenerateResult> {
   const [skill] = await db.select().from(skillNodes).where(eq(skillNodes.id, skillId)).limit(1);
   if (!skill) throw new Error(`Unknown skill: ${skillId}`);
+
+  const skillMisconceptions = await db
+    .select({ description: misconceptions.description })
+    .from(misconceptions)
+    .where(eq(misconceptions.skillId, skillId));
 
   let basedOn: typeof questions.$inferSelect | undefined;
   if (mode.kind === "variant") {
@@ -225,7 +227,27 @@ export async function generateQuestionForSkill(
     basedOn = row;
   }
 
-  const { system, user } = buildPrompts(skill, type, mode, basedOn);
+  // 防雷同：该用户近期在本技能上作答过的题目代码
+  let recentCodes: string[] = [];
+  if (mode.kind === "fresh" && opts.userId) {
+    const recent = await db
+      .select({ code: questions.code })
+      .from(attempts)
+      .innerJoin(questions, eq(attempts.questionId, questions.id))
+      .where(and(eq(attempts.userId, opts.userId), eq(questions.skillId, skillId)))
+      .orderBy(desc(attempts.createdAt))
+      .limit(20);
+    recentCodes = [...new Set(recent.map((r) => r.code))].slice(0, 3);
+  }
+
+  const { system, user } = buildPrompts(
+    skill,
+    skillMisconceptions.map((m) => m.description),
+    type,
+    mode,
+    basedOn,
+    recentCodes,
+  );
 
   let savedQuestionId: string | null = null;
 
@@ -272,7 +294,7 @@ export async function generateQuestionForSkill(
               skillId,
               type,
               code,
-              prompt,
+              prompt: stripCodeFences(prompt),
               answer,
               explanation,
               source: "ai_generated",

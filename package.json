@@ -10,6 +10,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed-skills.ts",
+    "db:seed:demo": "tsx scripts/seed-demo-user.ts",
     "generate:question": "tsx scripts/generate-question.ts"
   },
   "dependencies": {
@@ -20,6 +21,8 @@
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {

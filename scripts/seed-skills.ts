@@ -5,7 +5,8 @@ loadEnvConfig(process.cwd());
 import { readFileSync } from "node:fs";
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
-import { skillEdges, skillNodes } from "../lib/db/schema";
+import { notInArray, sql } from "drizzle-orm";
+import { misconceptions, skillEdges, skillNodes } from "../lib/db/schema";
 
 interface SkillDagJson {
   rustEdition: string;
@@ -81,7 +82,6 @@ async function main() {
     titleZh: n.title.zh,
     titleEn: n.title.en,
     summary: n.summary,
-    misconceptions: n.misconceptions,
     status: n.status,
     rustEdition: dag.rustEdition,
     updatedAt: new Date(),
@@ -93,13 +93,12 @@ async function main() {
     .onConflictDoUpdate({
       target: skillNodes.id,
       set: {
-        domain: skillNodes.domain,
-        titleZh: skillNodes.titleZh,
-        titleEn: skillNodes.titleEn,
-        summary: skillNodes.summary,
-        misconceptions: skillNodes.misconceptions,
-        status: skillNodes.status,
-        rustEdition: skillNodes.rustEdition,
+        domain: sql`excluded.domain`,
+        titleZh: sql`excluded.title_zh`,
+        titleEn: sql`excluded.title_en`,
+        summary: sql`excluded.summary`,
+        status: sql`excluded.status`,
+        rustEdition: sql`excluded.rust_edition`,
         updatedAt: new Date(),
       },
     });
@@ -111,7 +110,36 @@ async function main() {
   await db.delete(skillEdges);
   await db.insert(skillEdges).values(edgeRows);
 
-  console.log(`Seeded ${nodeRows.length} skill nodes, ${edgeRows.length} skill edges.`);
+  // 3. 误区按稳定 ID upsert，并删除已不在 JSON 中的旧行
+  //    （skill_evidence 会引用误区，不能整表清空；新增误区请追加到 JSON 数组末尾，避免已有证据错位）
+  const mcRows = dag.nodes.flatMap((n) =>
+    n.misconceptions.map((description, i) => ({
+      id: `${n.id}.m${i + 1}`,
+      skillId: n.id,
+      description,
+      updatedAt: new Date(),
+    })),
+  );
+  await db
+    .insert(misconceptions)
+    .values(mcRows)
+    .onConflictDoUpdate({
+      target: misconceptions.id,
+      set: {
+        skillId: sql`excluded.skill_id`,
+        description: sql`excluded.description`,
+        updatedAt: new Date(),
+      },
+    });
+  if (mcRows.length > 0) {
+    await db.delete(misconceptions).where(notInArray(misconceptions.id, mcRows.map((r) => r.id)));
+  } else {
+    await db.delete(misconceptions);
+  }
+
+  console.log(
+    `Seeded ${nodeRows.length} skill nodes, ${edgeRows.length} skill edges, ${mcRows.length} misconceptions.`,
+  );
 }
 
 main().catch((err) => {
