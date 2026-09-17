@@ -1,0 +1,1397 @@
+{
+  "version": "0.1.0",
+  "language": "rust",
+  "rustEdition": "2021",
+  "toolchain": "stable",
+  "idConvention": "<domain>[.<subdomain>].<skill>，全小写蛇形，2~3 段，如 borrow.nll.last_use、match.at_binding",
+  "statusWorkflow": ["draft", "compiler_verified", "human_reviewed", "calibrated"],
+  "goldenPathDomains": ["ownership", "borrow"],
+  "domains": [
+    { "id": "ownership", "title": { "zh": "所有权与移动语义", "en": "Ownership & Moves" } },
+    { "id": "borrow", "title": { "zh": "借用、NLL 与重借用", "en": "Borrowing, NLL & Reborrows" } },
+    { "id": "iterator", "title": { "zh": "迭代器与借用", "en": "Iterators & Borrows" } },
+    { "id": "lifetime", "title": { "zh": "生命周期", "en": "Lifetimes" } },
+    { "id": "closure", "title": { "zh": "闭包", "en": "Closures" } },
+    { "id": "struct", "title": { "zh": "结构体", "en": "Structs" } },
+    { "id": "enum", "title": { "zh": "枚举", "en": "Enums" } },
+    { "id": "match", "title": { "zh": "模式匹配", "en": "Pattern Matching" } },
+    { "id": "generic", "title": { "zh": "泛型", "en": "Generics" } },
+    { "id": "trait", "title": { "zh": "Trait", "en": "Traits" } },
+    { "id": "smartptr", "title": { "zh": "智能指针", "en": "Smart Pointers" } },
+    { "id": "concurrency", "title": { "zh": "并发", "en": "Concurrency" } },
+    { "id": "error", "title": { "zh": "错误处理", "en": "Error Handling" } },
+    { "id": "string", "title": { "zh": "字符串", "en": "Strings" } },
+    { "id": "slice", "title": { "zh": "切片", "en": "Slices" } },
+    { "id": "collections", "title": { "zh": "集合", "en": "Collections" } },
+    { "id": "module", "title": { "zh": "模块系统", "en": "Modules" } },
+    { "id": "async", "title": { "zh": "异步编程", "en": "Async" } },
+    { "id": "unsafe", "title": { "zh": "Unsafe", "en": "Unsafe" } },
+    { "id": "macro", "title": { "zh": "宏", "en": "Macros" } },
+    { "id": "diag", "title": { "zh": "编译器诊断阅读", "en": "Reading Compiler Diagnostics" } },
+    { "id": "panic", "title": { "zh": "运行时 Panic", "en": "Runtime Panics" } },
+    { "id": "convert", "title": { "zh": "类型转换", "en": "Conversions" } },
+    { "id": "shadowing", "title": { "zh": "遮蔽", "en": "Shadowing" } }
+  ],
+  "nodes": [
+    {
+      "id": "ownership.binding.immutability_default",
+      "title": { "zh": "绑定默认不可变", "en": "Bindings are immutable by default" },
+      "summary": "let 创建的绑定默认不可修改，重新赋值会触发 E0384。",
+      "prerequisites": [],
+      "misconceptions": ["以为不可变只是代码风格约定，实际重新赋值会被编译器拒绝"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.binding.mut_modifier",
+      "title": { "zh": "mut 绑定与重新赋值", "en": "mut bindings allow mutation" },
+      "summary": "let mut 允许重新赋值和原地修改，可变性属于绑定而非值本身。",
+      "prerequisites": ["ownership.binding.immutability_default"],
+      "misconceptions": ["以为 mut 是类型的一部分，实际上它属于绑定"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.move.on_assignment",
+      "title": { "zh": "赋值即移动", "en": "Assignment moves" },
+      "summary": "非 Copy 类型赋值会把所有权移动给新绑定，原绑定立即失效。",
+      "prerequisites": ["ownership.binding.immutability_default"],
+      "misconceptions": ["以为 let b = a 之后 a 还能用（浅拷贝直觉）", "以为移动会复制堆上的数据"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.move.on_function_arg",
+      "title": { "zh": "函数传参发生移动", "en": "Passing by value moves" },
+      "summary": "把非 Copy 值传给函数参数会移动所有权，调用方之后不能再用。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": ["以为把 String 传给函数后还能在调用处继续使用"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.move.on_function_return",
+      "title": { "zh": "返回值移出所有权", "en": "Returning moves ownership out" },
+      "summary": "函数返回值把所有权移交给调用方，是转移所有权的主要手段之一。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.move.use_after_move_error",
+      "title": { "zh": "移动后使用报错", "en": "Use after move is an error" },
+      "summary": "移动后继续读取原绑定触发 E0382，编译器静态阻止。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": ["以为报错只是警告可以忽略", "以为运行时才会出问题"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.copy.scalar_types",
+      "title": { "zh": "标量类型实现 Copy", "en": "Scalar types are Copy" },
+      "summary": "整数、浮点、布尔、字符等标量实现 Copy，赋值时复制而非移动。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": ["以为所有类型都是 Copy", "以为 String 也是 Copy"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.copy.bitwise_semantics",
+      "title": { "zh": "Copy 是位拷贝语义", "en": "Copy is a bitwise duplicate" },
+      "summary": "Copy 只做位拷贝且不使原值失效，因此只有无堆资源的类型才能实现。",
+      "prerequisites": ["ownership.copy.scalar_types"],
+      "misconceptions": ["以为可以给任意类型 derive Copy", "以为 Copy 和 Clone 只是名字不同"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.clone.deep_copy_explicit",
+      "title": { "zh": "clone 显式深拷贝", "en": "clone() is an explicit deep copy" },
+      "summary": "clone() 显式复制堆数据得到两个独立值，用来规避移动但不改变所有权规则。",
+      "prerequisites": ["ownership.move.use_after_move_error"],
+      "misconceptions": ["以为 clone 是绕过所有权检查的免费手段，忽略其性能成本"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.partial_move.struct_field",
+      "title": { "zh": "结构体字段部分移动", "en": "Partial moves of struct fields" },
+      "summary": "移出结构体某个字段后，该字段不可再用，但未移动的字段仍可使用。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": ["以为移出一个字段后整个结构体立即全部失效", "以为部分移动后还能整体使用结构体"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.partial_move.tuple_index",
+      "title": { "zh": "元组按下标部分移动", "en": "Partial moves of tuple elements" },
+      "summary": "元组同样可以按下标部分移动，规则与结构体字段一致。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.partial_move.option_inner",
+      "title": { "zh": "移出 Option 内部值", "en": "Moving out of Option" },
+      "summary": "通过 match 或 unwrap 移出 Option 内容后，原 Option 不能再按整体使用。",
+      "prerequisites": ["ownership.move.on_assignment", "enum.option.replaces_null"],
+      "misconceptions": ["以为从 Option 里取出值后 Option 本身还能再用"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.move_out_of_index_forbidden",
+      "title": { "zh": "禁止通过索引移出集合元素", "en": "Cannot move out of indexed content" },
+      "summary": "v[0] 不能移出 Vec 元素，因为 Vec 需要保持对全部元素的所有权。",
+      "prerequisites": ["ownership.move.use_after_move_error"],
+      "misconceptions": ["以为 let x = v[0]; 能把元素拿出来", "不明白为什么 pop/remove 可以而索引不行"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.drop.scope_end",
+      "title": { "zh": "作用域结束自动 drop", "en": "Values drop at scope end" },
+      "summary": "所有者离开作用域时自动调用 drop 释放资源，无需手动 free。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.drop.reverse_declaration_order",
+      "title": { "zh": "按声明逆序析构", "en": "Drop runs in reverse declaration order" },
+      "summary": "同一作用域内变量按声明的逆序 drop，影响锁守卫、临时值的行为。",
+      "prerequisites": ["ownership.drop.scope_end"],
+      "misconceptions": ["以为按声明顺序 drop"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.drop.manually_with_std_mem_drop",
+      "title": { "zh": "std::mem::drop 提前释放", "en": "std::mem::drop drops early" },
+      "summary": "drop(value) 立即拿走所有权并释放，常用于提前解锁或释放资源。",
+      "prerequisites": ["ownership.drop.scope_end"],
+      "misconceptions": ["以为 drop(&value) 也能提前释放"],
+      "status": "draft"
+    },
+    {
+      "id": "ownership.double_move_prevention",
+      "title": { "zh": "编译器阻止二次移动", "en": "Compiler prevents double moves" },
+      "summary": "同一值不能被移动两次，从类型系统层面杜绝 double free。",
+      "prerequisites": ["ownership.move.use_after_move_error"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.shared.create",
+      "title": { "zh": "创建共享引用", "en": "Creating shared references" },
+      "summary": "&x 创建共享引用，只读访问值而不取得所有权。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": ["以为取引用会复制值", "以为引用本身拥有数据"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.shared.multiple_allowed",
+      "title": { "zh": "共享引用可共存多个", "en": "Multiple shared references coexist" },
+      "summary": "同一值可以同时存在任意多个有效的共享引用。",
+      "prerequisites": ["borrow.shared.create"],
+      "misconceptions": ["以为引用同一时刻只能存在一个"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.shared.read_only_through_ref",
+      "title": { "zh": "共享引用只读", "en": "Shared references are read-only" },
+      "summary": "不能通过 &T 修改数据，即使底层绑定是 mut。",
+      "prerequisites": ["borrow.shared.create"],
+      "misconceptions": ["以为绑定是 mut 就能通过 &T 修改", "不了解内部可变性是显式例外"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.mutable.create",
+      "title": { "zh": "创建可变引用", "en": "Creating mutable references" },
+      "summary": "&mut x 创建可变引用，允许通过它修改值。",
+      "prerequisites": ["borrow.shared.create", "ownership.binding.mut_modifier"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.mutable.requires_mut_binding",
+      "title": { "zh": "可变借用要求 mut 绑定", "en": "Mutable borrows need a mut binding" },
+      "summary": "只有 let mut 声明的绑定才能被 &mut 借用。",
+      "prerequisites": ["borrow.mutable.create"],
+      "misconceptions": ["以为可以对不可变绑定取 &mut"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.mutable.exclusive",
+      "title": { "zh": "可变引用独占", "en": "Mutable references are exclusive" },
+      "summary": "同一时刻一个值只允许一个有效的可变引用，违反触发 E0499。",
+      "prerequisites": ["borrow.mutable.create"],
+      "misconceptions": ["以为可以同时持有两个 &mut 分别改不同部分", "以为先后创建两个 &mut 只要不交叉使用就合法"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.mutable.conflict_with_shared",
+      "title": { "zh": "共享与可变互斥", "en": "Shared and mutable borrows conflict" },
+      "summary": "共享引用存活期间不能再创建可变引用，反之亦然，触发 E0502。",
+      "prerequisites": ["borrow.mutable.exclusive", "borrow.shared.multiple_allowed"],
+      "misconceptions": ["以为只要有 & 存在就永远不能 &mut，与借用存活期无关", "以为读引用不影响写引用"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.nll.last_use",
+      "title": { "zh": "NLL：借用活到最后一次使用", "en": "NLL: borrows end at last use" },
+      "summary": "非词法生命周期下，借用的有效期止于最后一次使用，而非作用域结束。",
+      "prerequisites": ["borrow.mutable.conflict_with_shared"],
+      "misconceptions": ["以为借用一定活到作用域大括号结束", "用老版词法生命周期的直觉判断冲突"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.nll.scope_end_vs_last_use",
+      "title": { "zh": "作用域结束 ≠ 借用结束", "en": "Scope end vs last use" },
+      "summary": "能区分引用变量的作用域、值的生命周期和借用有效期三个概念。",
+      "prerequisites": ["borrow.nll.last_use"],
+      "misconceptions": ["把引用的词法作用域和借用有效期混为一谈"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.nll.two_phase_borrow",
+      "title": { "zh": "两阶段借用", "en": "Two-phase borrows" },
+      "summary": "v.push(v.len()) 之类的方法调用中，&mut 分两阶段激活，允许实参先读取接收者。",
+      "prerequisites": ["borrow.nll.last_use"],
+      "misconceptions": ["以为 v.push(v.len()) 必然报借用冲突", "以为两阶段借用可以泛化到任意嵌套调用"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.reborrow.shared_from_mut",
+      "title": { "zh": "从 &mut 共享重借用", "en": "Shared reborrow from &mut" },
+      "summary": "可以从 &mut T 创建 &T 重借用，期间原 &mut 被挂起。",
+      "prerequisites": ["borrow.mutable.exclusive"],
+      "misconceptions": ["以为 &mut 存在期间完全不能再读取"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.reborrow.mutable_from_mut",
+      "title": { "zh": "从 &mut 可变重借用", "en": "Mutable reborrow from &mut" },
+      "summary": "可以从 &mut T 再创建 &mut T 重借用，独占性沿链条传递。",
+      "prerequisites": ["borrow.reborrow.shared_from_mut"],
+      "misconceptions": ["以为 &mut 一经创建就不能再派生任何引用"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.reborrow.parent_suspended",
+      "title": { "zh": "重借用期间父引用挂起", "en": "Parent is suspended during reborrow" },
+      "summary": "子重借用存活期间父 &mut 不可用，子借用结束后父引用恢复。",
+      "prerequisites": ["borrow.reborrow.mutable_from_mut"],
+      "misconceptions": ["以为重借用时还能同时使用父引用", "以为父引用被永久夺走"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.reborrow.explicit_asterisk",
+      "title": { "zh": "显式 &mut *r 重借用", "en": "Explicit reborrow with &mut *r" },
+      "summary": "需要复用 &mut 时可写 &mut *r 显式重借用，避免移动原引用。",
+      "prerequisites": ["borrow.reborrow.mutable_from_mut"],
+      "misconceptions": ["不知道 *r 解引用再取引用不会移动底层值"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.function.implicit_mut_reborrow",
+      "title": { "zh": "函数实参隐式重借用 &mut", "en": "Implicit reborrow of &mut arguments" },
+      "summary": "把 &mut T 传给签名中恰好是 &mut T 的形参时编译器自动重借用，调用后仍可用。",
+      "prerequisites": ["borrow.reborrow.mutable_from_mut"],
+      "misconceptions": ["以为把 &mut 传给函数后就永久失去它"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.function.arg_moves_exclusive_ref_without_reborrow",
+      "title": { "zh": "不触发隐式重借用的传参会移动 &mut", "en": "Argument positions that move &mut" },
+      "summary": "当形参类型不是字面上的 &mut T（如泛型参数）时不发生隐式重借用，&mut 被移动。",
+      "prerequisites": ["borrow.function.implicit_mut_reborrow"],
+      "misconceptions": ["以为所有函数调用都会自动重借用"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.generic_parameter.moves_mut_ref",
+      "title": { "zh": "泛型参数会移动 &mut", "en": "Generic parameters move &mut" },
+      "summary": "泛型函数 f<T>(x: T) 传入 &mut 时 T 推断为 &mut 类型本身，引用被移动而非重借用。",
+      "prerequisites": ["borrow.function.arg_moves_exclusive_ref_without_reborrow"],
+      "misconceptions": ["以为泛型函数里 &mut 的行为和具体 &mut 形参一样"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.split.disjoint_struct_fields",
+      "title": { "zh": "不同字段可拆分借用", "en": "Disjoint field borrows" },
+      "summary": "编译器按字段追踪借用，可同时 &mut a.x 和 &mut a.y。",
+      "prerequisites": ["borrow.mutable.conflict_with_shared"],
+      "misconceptions": ["以为借用一个字段就锁住了整个结构体"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.split.same_field_conflict",
+      "title": { "zh": "同一字段拆分仍冲突", "en": "Same-field borrows still conflict" },
+      "summary": "对同一字段的多个 &mut 依然违反独占规则。",
+      "prerequisites": ["borrow.split.disjoint_struct_fields"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.split.slice_methods",
+      "title": { "zh": "split_at_mut 拆分切片借用", "en": "Splitting slices with split_at_mut" },
+      "summary": "编译器无法静态证明索引不相交，需要 split_at_mut 等 API 获得不重叠的 &mut 切片。",
+      "prerequisites": ["borrow.split.disjoint_struct_fields"],
+      "misconceptions": ["以为对 v[i] 和 v[j] 取 &mut 编译器能证明不重叠"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.index_while_borrowed",
+      "title": { "zh": "借用期间经原绑定访问冲突", "en": "Using the original binding while borrowed" },
+      "summary": "借用存活期间通过原变量读写会触发 E0502/E0506，即使操作看似无害。",
+      "prerequisites": ["borrow.mutable.conflict_with_shared"],
+      "misconceptions": ["以为只读访问原变量不违反规则"],
+      "status": "draft"
+    },
+    {
+      "id": "borrow.return_local_ref_forbidden",
+      "title": { "zh": "禁止返回局部变量引用", "en": "Cannot return references to locals" },
+      "summary": "局部变量在函数结束时 drop，返回其引用必然悬垂，触发 E0515。",
+      "prerequisites": ["borrow.nll.last_use"],
+      "misconceptions": ["以为返回内部值的引用编译器会自动延长其生命"],
+      "status": "draft"
+    },
+    {
+      "id": "iterator.iter.holds_shared_borrow",
+      "title": { "zh": "iter() 持有共享借用", "en": "iter() holds a shared borrow" },
+      "summary": "iter() 借用整个集合，迭代器存活期间集合不可被修改。",
+      "prerequisites": ["borrow.shared.create"],
+      "misconceptions": ["以为迭代器复制了元素、与集合无关"],
+      "status": "draft"
+    },
+    {
+      "id": "iterator.iter_mut.holds_exclusive_borrow",
+      "title": { "zh": "iter_mut() 持有独占借用", "en": "iter_mut() holds an exclusive borrow" },
+      "summary": "iter_mut() 持有整个集合的 &mut，迭代期间任何其他访问都被拒绝。",
+      "prerequisites": ["borrow.mutable.exclusive"],
+      "misconceptions": ["以为迭代单个元素时只锁定该元素"],
+      "status": "draft"
+    },
+    {
+      "id": "iterator.into_iter.moves_collection",
+      "title": { "zh": "into_iter() 移走集合", "en": "into_iter() moves the collection" },
+      "summary": "into_iter() 消耗集合所有权并逐个产出元素，之后集合不可再用。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": ["以为 for x in v 之后 v 还能用", "分不清 for 循环对 Vec、&Vec、&mut Vec 的差别"],
+      "status": "draft"
+    },
+    {
+      "id": "iterator.for_loop_desugars_into_iter",
+      "title": { "zh": "for 循环脱糖为 into_iter", "en": "for loops desugar to into_iter" },
+      "summary": "for x in expr 先对 expr 调用 into_iter()，决定了 for 之后原集合是否可用。",
+      "prerequisites": ["iterator.into_iter.moves_collection"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "iterator.lazy.until_consumed",
+      "title": { "zh": "迭代器惰性求值", "en": "Iterators are lazy" },
+      "summary": "map/filter 等适配器只构建迭代器，不消费就不执行任何工作。",
+      "prerequisites": ["iterator.iter.holds_shared_borrow"],
+      "misconceptions": ["以为调用 map 后立即对每个元素执行了闭包"],
+      "status": "draft"
+    },
+    {
+      "id": "iterator.consume.collect",
+      "title": { "zh": "collect 消费迭代器", "en": "collect consumes the iterator" },
+      "summary": "collect 等消费适配器驱动迭代器求值并收集结果，类型由目标集合推断。",
+      "prerequisites": ["iterator.lazy.until_consumed"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "iterator.invalidate.mutation_during_iteration",
+      "title": { "zh": "迭代中修改集合被拒", "en": "Mutation during iteration is rejected" },
+      "summary": "迭代器持有借用期间对集合 push/remove 触发 E0502，需要收集后修改或换用 retain 等 API。",
+      "prerequisites": ["iterator.iter.holds_shared_borrow", "borrow.mutable.exclusive"],
+      "misconceptions": ["以为遍历 Vec 时可以边遍历边 push", "以为先 collect 成索引列表再修改就没有代价"],
+      "status": "draft"
+    },
+    {
+      "id": "iterator.chain.adapters_composition",
+      "title": { "zh": "适配器链式组合", "en": "Chaining iterator adapters" },
+      "summary": "多个惰性适配器可零成本组合，最终由一次消费完成全部处理。",
+      "prerequisites": ["iterator.lazy.until_consumed"],
+      "misconceptions": ["以为每个适配器都会遍历一遍集合并产生中间集合"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.dangling_compile_error",
+      "title": { "zh": "悬垂引用编译期拦截", "en": "Dangling references are compile errors" },
+      "summary": "借用检查器静态证明引用不会比目标活得更久，悬垂引用无法通过编译。",
+      "prerequisites": ["borrow.return_local_ref_forbidden"],
+      "misconceptions": ["以为悬垂引用是运行时才暴露的问题"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.elision.single_input",
+      "title": { "zh": "单输入生命周期省略", "en": "Single-input lifetime elision" },
+      "summary": "只有一个输入引用时，输出引用的生命周期自动绑定到它，可以省略标注。",
+      "prerequisites": ["borrow.shared.create"],
+      "misconceptions": ["以为省略标注意味着没有生命周期约束"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.elision.method_self",
+      "title": { "zh": "方法中的 self 省略规则", "en": "Method elision with self" },
+      "summary": "方法中输出引用的生命周期默认绑定到 &self/&mut self。",
+      "prerequisites": ["lifetime.elision.single_input"],
+      "misconceptions": ["以为方法返回的引用可以比 self 活得更久"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.annotation.function_relation",
+      "title": { "zh": "函数签名标注输入输出关系", "en": "Annotations relate inputs to outputs" },
+      "summary": "多输入引用且返回引用时，必须显式标注输出引用来自哪个输入。",
+      "prerequisites": ["lifetime.elision.single_input", "lifetime.dangling_compile_error"],
+      "misconceptions": ["以为标注生命周期能延长值的存活时间", "以为标注是写给运行时看的"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.annotation.struct_field",
+      "title": { "zh": "结构体持引用需标注", "en": "Structs holding references need annotations" },
+      "summary": "结构体字段存放引用时必须标注生命周期，表达结构体不比被引用数据活得久。",
+      "prerequisites": ["lifetime.annotation.function_relation"],
+      "misconceptions": ["以为结构体里的引用可以独立存在"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.outlives_constraint",
+      "title": { "zh": "'a: 'b 存活约束", "en": "Outlives constraints 'a: 'b" },
+      "summary": "'a: 'b 表示 'a 至少活得和 'b 一样久，用于泛型与生命周期之间的约束表达。",
+      "prerequisites": ["lifetime.annotation.function_relation"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.static_string_literal",
+      "title": { "zh": "'static 字符串字面量", "en": "'static string literals" },
+      "summary": "字符串字面量存储在程序二进制中，拥有 &'static str 类型。",
+      "prerequisites": ["lifetime.annotation.function_relation"],
+      "misconceptions": ["以为所有 &'static str 都来自字面量"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.static_not_immortal_value",
+      "title": { "zh": "'static 不等于让值永生", "en": "'static does not make values immortal" },
+      "summary": "T: 'static 是约束类型不含非 'static 引用，给局部值加 'static 标注并不能延长其生命。",
+      "prerequisites": ["lifetime.static_string_literal"],
+      "misconceptions": ["以为把生命周期改成 'static 能解决所有借用报错"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.subtyping_covariance",
+      "title": { "zh": "生命周期协变与缩短", "en": "Variance and shrinking lifetimes" },
+      "summary": "长生命周期引用可在需要处缩短为短生命周期（协变），&mut T 对 T 不变。",
+      "prerequisites": ["lifetime.outlives_constraint"],
+      "misconceptions": ["以为引用可以任意变长或变短"],
+      "status": "draft"
+    },
+    {
+      "id": "lifetime.hrtb.for_syntax",
+      "title": { "zh": "for<'a> 高阶约束", "en": "Higher-ranked trait bounds" },
+      "summary": "for<'a> 表达对所有生命周期都成立的约束，常见于闭包与函数指针签名。",
+      "prerequisites": ["lifetime.subtyping_covariance"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "closure.capture.by_shared_ref",
+      "title": { "zh": "闭包按共享引用捕获", "en": "Closures capture by shared ref" },
+      "summary": "闭包默认以最宽松方式捕获环境，只读使用时捕获 &T。",
+      "prerequisites": ["borrow.shared.create"],
+      "misconceptions": ["以为闭包总是复制捕获的变量"],
+      "status": "draft"
+    },
+    {
+      "id": "closure.capture.by_unique_mut_ref",
+      "title": { "zh": "闭包按可变引用捕获", "en": "Closures capture by &mut" },
+      "summary": "闭包内修改环境变量时捕获 &mut，闭包存活期间原变量被独占。",
+      "prerequisites": ["borrow.mutable.create"],
+      "misconceptions": ["以为闭包修改环境变量不影响外部使用"],
+      "status": "draft"
+    },
+    {
+      "id": "closure.capture.by_move_value",
+      "title": { "zh": "闭包按值捕获", "en": "Closures capture by value" },
+      "summary": "闭包内消费环境变量（如 drop、移出）时按值捕获，变量移入闭包。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "closure.move_keyword_forces_ownership",
+      "title": { "zh": "move 关键字强制转移", "en": "move forces capture by value" },
+      "summary": "move 闭包强制按值捕获全部环境，常用于把数据送进线程。",
+      "prerequisites": ["closure.capture.by_move_value"],
+      "misconceptions": ["以为 move 只影响捕获的非 Copy 变量中的某一部分"],
+      "status": "draft"
+    },
+    {
+      "id": "closure.fn_traits.fn_once",
+      "title": { "zh": "FnOnce 语义", "en": "FnOnce semantics" },
+      "summary": "按值捕获并消费环境的闭包实现 FnOnce，只能调用一次。",
+      "prerequisites": ["closure.capture.by_move_value"],
+      "misconceptions": ["以为所有闭包都能调用任意多次"],
+      "status": "draft"
+    },
+    {
+      "id": "closure.fn_traits.fn_mut",
+      "title": { "zh": "FnMut 语义", "en": "FnMut semantics" },
+      "summary": "捕获 &mut 的闭包实现 FnMut，可多次调用但调用点需要 mut。",
+      "prerequisites": ["closure.capture.by_unique_mut_ref"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "closure.fn_traits.fn",
+      "title": { "zh": "Fn 语义", "en": "Fn semantics" },
+      "summary": "只读捕获的闭包实现 Fn，可在任意上下文多次调用。",
+      "prerequisites": ["closure.capture.by_shared_ref"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "closure.as_function_arg_bound",
+      "title": { "zh": "闭包作为参数与 trait 约束", "en": "Closures as arguments with bounds" },
+      "summary": "接收闭包的函数用 Fn/FnMut/FnOnce 约束声明，约束选择决定调用次数与捕获权限。",
+      "prerequisites": ["closure.fn_traits.fn_mut", "generic.bound.inline_vs_where"],
+      "misconceptions": ["给只需 FnOnce 的函数写了 Fn 约束导致闭包无法传入"],
+      "status": "draft"
+    },
+    {
+      "id": "struct.init.field_init_shorthand",
+      "title": { "zh": "字段初始化简写", "en": "Field init shorthand" },
+      "summary": "变量名与字段同名时可省略重复的字段名。",
+      "prerequisites": [],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "struct.update.syntax_moves_rest",
+      "title": { "zh": "更新语法移动剩余字段", "en": "Update syntax moves the rest" },
+      "summary": "..base 会把 base 中未显式列出的字段移动进新结构体，Copy 字段除外。",
+      "prerequisites": ["ownership.move.on_assignment", "struct.init.field_init_shorthand"],
+      "misconceptions": ["以为 ..base 之后 base 还能完整使用"],
+      "status": "draft"
+    },
+    {
+      "id": "struct.tuple.positional",
+      "title": { "zh": "元组结构体按下标访问", "en": "Tuple structs use positional access" },
+      "summary": "元组结构体字段无名，通过 .0/.1 访问，行为与元组一致。",
+      "prerequisites": ["struct.init.field_init_shorthand"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "enum.variant.associated_data",
+      "title": { "zh": "枚举变体携带数据", "en": "Enum variants carry data" },
+      "summary": "每个变体可携带不同类型和数量的数据，内存取最大变体。",
+      "prerequisites": [],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "enum.option.replaces_null",
+      "title": { "zh": "Option 替代空指针", "en": "Option replaces null" },
+      "summary": "Option<T> 在类型层面强制处理值缺失，Rust 没有 null。",
+      "prerequisites": ["enum.variant.associated_data"],
+      "misconceptions": ["以为存在某种隐藏的空值可以绕过 Option"],
+      "status": "draft"
+    },
+    {
+      "id": "enum.result.must_use",
+      "title": { "zh": "Result 必须处理", "en": "Result is must_use" },
+      "summary": "Result 标记为 must_use，忽略它会产生警告，强迫显式处理错误。",
+      "prerequisites": ["enum.variant.associated_data"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "match.exhaustiveness_required",
+      "title": { "zh": "match 必须穷尽", "en": "match must be exhaustive" },
+      "summary": "match 必须覆盖所有可能取值，缺少分支直接编译错误。",
+      "prerequisites": ["enum.variant.associated_data"],
+      "misconceptions": ["以为可以只写关心的分支，其余默认忽略"],
+      "status": "draft"
+    },
+    {
+      "id": "match.arms.move_bindings",
+      "title": { "zh": "分支绑定默认移动", "en": "Match bindings move by default" },
+      "summary": "匹配绑定默认按值移动被匹配内容，需要引用时写 ref 或匹配引用。",
+      "prerequisites": ["match.exhaustiveness_required", "ownership.move.on_assignment"],
+      "misconceptions": ["以为 match 不会移动被匹配的值"],
+      "status": "draft"
+    },
+    {
+      "id": "match.ergonomics.ref_default_binding",
+      "title": { "zh": "匹配人体工学默认引用绑定", "en": "Match ergonomics default binding modes" },
+      "summary": "对引用匹配非引用模式时，绑定自动变为引用（默认绑定模式），无需手写 ref。",
+      "prerequisites": ["match.arms.move_bindings", "borrow.shared.create"],
+      "misconceptions": ["以为匹配 &Option<T> 会得到 T 而不是 &T", "不知道默认绑定模式何时切换为 ref mut"],
+      "status": "draft"
+    },
+    {
+      "id": "match.guard.extra_condition",
+      "title": { "zh": "匹配守卫附加条件", "en": "Match guards" },
+      "summary": "if 守卫为分支附加运行时条件，守卫失败会继续尝试后续分支。",
+      "prerequisites": ["match.exhaustiveness_required"],
+      "misconceptions": ["以为守卫不通过会 panic"],
+      "status": "draft"
+    },
+    {
+      "id": "match.if_let_single_pattern",
+      "title": { "zh": "if let 单模式匹配", "en": "if let single-pattern matching" },
+      "summary": "if let 处理只关心一种模式的场景，放弃穷尽性检查。",
+      "prerequisites": ["match.exhaustiveness_required"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "match.while_let_loop",
+      "title": { "zh": "while let 循环匹配", "en": "while let loops" },
+      "summary": "while let 在模式持续匹配时循环，常用于消费 Option/迭代器。",
+      "prerequisites": ["match.if_let_single_pattern"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "match.destructure.nested",
+      "title": { "zh": "嵌套解构", "en": "Nested destructuring" },
+      "summary": "模式可嵌套解构结构体、枚举、元组的内部字段。",
+      "prerequisites": ["match.exhaustiveness_required"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "match.at_binding",
+      "title": { "zh": "@ 绑定同时测试与绑定", "en": "@ bindings test and bind" },
+      "summary": "x @ pattern 在测试模式的同时把匹配到的值绑定到 x。",
+      "prerequisites": ["match.arms.move_bindings"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "generic.type_param.declaration",
+      "title": { "zh": "声明类型参数", "en": "Declaring type parameters" },
+      "summary": "函数、结构体、枚举、impl 均可声明 <T> 类型参数实现复用。",
+      "prerequisites": [],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "generic.monomorphization.static_dispatch",
+      "title": { "zh": "单态化与静态分发", "en": "Monomorphization = static dispatch" },
+      "summary": "编译器为每个具体类型生成专用代码，泛型调用零运行时开销。",
+      "prerequisites": ["generic.type_param.declaration"],
+      "misconceptions": ["以为泛型有运行时擦除开销", "以为泛型函数只有一份机器码"],
+      "status": "draft"
+    },
+    {
+      "id": "generic.bound.inline_vs_where",
+      "title": { "zh": "约束写法与 where 从句", "en": "Inline bounds vs where clauses" },
+      "summary": "T: Trait 与 where T: Trait 等价，复杂约束用 where 更清晰。",
+      "prerequisites": ["generic.type_param.declaration"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "generic.bound.multiple_traits",
+      "title": { "zh": "多 trait 约束", "en": "Multiple trait bounds" },
+      "summary": "T: A + B 要求类型同时实现多个 trait。",
+      "prerequisites": ["generic.bound.inline_vs_where"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "generic.impl.for_concrete_type",
+      "title": { "zh": "泛型类型的具体 impl", "en": "impl blocks for concrete instantiations" },
+      "summary": "可以为 Vec<i32> 这类具体实例化类型单独实现方法。",
+      "prerequisites": ["generic.type_param.declaration"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "generic.impl.with_bounds",
+      "title": { "zh": "带约束的 impl 块", "en": "Conditional impl with bounds" },
+      "summary": "impl<T: Trait> 表示仅为满足约束的 T 实现方法，实现条件化能力。",
+      "prerequisites": ["generic.impl.for_concrete_type", "generic.bound.inline_vs_where"],
+      "misconceptions": ["以为泛型 impl 对所有 T 都可用"],
+      "status": "draft"
+    },
+    {
+      "id": "generic.default_type_param",
+      "title": { "zh": "默认类型参数", "en": "Default type parameters" },
+      "summary": "<T = DefaultType> 允许调用方省略类型参数。",
+      "prerequisites": ["generic.type_param.declaration"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "trait.define.shared_behavior",
+      "title": { "zh": "定义 trait 抽象行为", "en": "Defining traits" },
+      "summary": "trait 声明一组方法签名，表达跨类型的共享行为能力。",
+      "prerequisites": [],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "trait.impl.for_local_type",
+      "title": { "zh": "为本地类型实现 trait", "en": "Implementing traits for local types" },
+      "summary": "impl Trait for Type 提供具体实现，是最基本的 trait 使用方式。",
+      "prerequisites": ["trait.define.shared_behavior"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "trait.orphan_rule.coherence",
+      "title": { "zh": "孤儿规则与一致性", "en": "Orphan rule and coherence" },
+      "summary": "只有当 trait 或类型至少一个定义在本地 crate 时才允许实现，保证全局一致性。",
+      "prerequisites": ["trait.impl.for_local_type"],
+      "misconceptions": ["以为可以随便给 String 实现外部 trait", "不理解为什么需要 newtype 包装"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.default_impl.method",
+      "title": { "zh": "默认方法实现", "en": "Default method implementations" },
+      "summary": "trait 可为方法提供默认体，实现者可选择覆盖。",
+      "prerequisites": ["trait.define.shared_behavior"],
+      "misconceptions": ["以为默认方法不能被覆盖"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.supertrait.hierarchy",
+      "title": { "zh": "超 trait 层级", "en": "Supertraits" },
+      "summary": "trait A: B 要求实现 A 的类型也必须实现 B。",
+      "prerequisites": ["trait.impl.for_local_type"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "trait.associated_type.vs_generic",
+      "title": { "zh": "关联类型 vs 泛型参数", "en": "Associated types vs generics" },
+      "summary": "关联类型每个 impl 只能确定一次，泛型 trait 参数可为不同类型多次实现。",
+      "prerequisites": ["trait.impl.for_local_type", "generic.type_param.declaration"],
+      "misconceptions": ["分不清 Iterator 的 Item 为什么用关联类型而不是泛型"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.derive.compiler_generated",
+      "title": { "zh": "derive 自动实现", "en": "derive generates impls" },
+      "summary": "#[derive(...)] 由编译器按字段结构自动生成常见 trait 实现。",
+      "prerequisites": ["trait.impl.for_local_type"],
+      "misconceptions": ["以为 derive 对所有 trait 都可用"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.bound.sized_implicit",
+      "title": { "zh": "泛型默认 Sized 约束", "en": "Implicit Sized bound" },
+      "summary": "泛型参数默认带 Sized 约束，按值传递需要编译期确定大小。",
+      "prerequisites": ["generic.type_param.declaration"],
+      "misconceptions": ["不知道 str、[T] 为什么不能直接按值传"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.bound.relax_question_sized",
+      "title": { "zh": "?Sized 放宽约束", "en": "?Sized relaxes the bound" },
+      "summary": "T: ?Sized 允许类型参数接受不定长类型，此时只能通过指针间接使用。",
+      "prerequisites": ["trait.bound.sized_implicit"],
+      "misconceptions": ["以为 ?Sized 表示类型一定不是 Sized"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.object.dyn_fat_pointer",
+      "title": { "zh": "dyn Trait 是胖指针", "en": "dyn Trait is a fat pointer" },
+      "summary": "&dyn Trait 由数据指针加 vtable 指针组成，因此 dyn Trait 不定长。",
+      "prerequisites": ["trait.define.shared_behavior", "trait.bound.relax_question_sized"],
+      "misconceptions": ["以为 dyn Trait 可以脱离指针直接存放"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.object.dynamic_dispatch",
+      "title": { "zh": "dyn 动态分发", "en": "Dynamic dispatch via vtable" },
+      "summary": "dyn Trait 通过 vtable 在运行时解析方法调用，换来灵活性与少量间接开销。",
+      "prerequisites": ["trait.object.dyn_fat_pointer"],
+      "misconceptions": ["以为动态分发和静态分发性能完全相同"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.object.dyn_compatibility",
+      "title": { "zh": "dyn 兼容性（对象安全）", "en": "dyn compatibility (object safety)" },
+      "summary": "只有满足对象安全规则的 trait 才能做成 dyn Trait，返回 Self、泛型方法等会破坏兼容。",
+      "prerequisites": ["trait.object.dyn_fat_pointer"],
+      "misconceptions": ["以为任何 trait 都能做 dyn", "不理解为什么 Clone 不能做 dyn"],
+      "status": "draft"
+    },
+    {
+      "id": "trait.object.no_generic_methods",
+      "title": { "zh": "泛型方法破坏 dyn 兼容", "en": "Generic methods break dyn compatibility" },
+      "summary": "vtable 无法为无限多实例化预留条目，带泛型方法的 trait 不能整体做 dyn。",
+      "prerequisites": ["trait.object.dyn_compatibility"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "trait.generic_static_vs_dyn_dispatch",
+      "title": { "zh": "静态与动态分发取舍", "en": "Static vs dynamic dispatch trade-offs" },
+      "summary": "能在泛型约束（静态分发）与 dyn（动态分发）之间按性能、二进制大小、异构集合需求做选择。",
+      "prerequisites": ["generic.monomorphization.static_dispatch", "trait.object.dynamic_dispatch"],
+      "misconceptions": ["以为两种写法只是语法差异"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.box.heap_allocate",
+      "title": { "zh": "Box 堆分配", "en": "Box allocates on the heap" },
+      "summary": "Box<T> 把数据放到堆上，本身是唯一所有者的栈指针。",
+      "prerequisites": ["ownership.move.on_assignment"],
+      "misconceptions": ["以为 Box 会自动被多个所有者共享"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.box.recursive_type_size",
+      "title": { "zh": "Box 让递归类型有确定大小", "en": "Box gives recursive types a known size" },
+      "summary": "递归类型通过 Box 打断无限大小，使编译器能计算布局。",
+      "prerequisites": ["smartptr.box.heap_allocate", "enum.variant.associated_data"],
+      "misconceptions": ["不理解为什么递归类型直接嵌套无法编译"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.deref_trait.custom",
+      "title": { "zh": "实现 Deref", "en": "Implementing Deref" },
+      "summary": "实现 Deref 让自定义类型可通过 * 访问内部目标。",
+      "prerequisites": ["trait.impl.for_local_type"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.deref_coercion.method_call",
+      "title": { "zh": "Deref coercion 与方法调用", "en": "Deref coercion in method calls" },
+      "summary": "编译器在方法调用和传参时自动插入解引用，使 &String 可当 &str 用。",
+      "prerequisites": ["smartptr.deref_trait.custom", "borrow.shared.create"],
+      "misconceptions": ["以为 &String 到 &str 是类型转换", "以为 deref coercion 会发生在所有位置"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.drop_trait.cleanup",
+      "title": { "zh": "实现 Drop 自定义清理", "en": "Implementing Drop" },
+      "summary": "Drop::drop 在值离开作用域时自动调用，但不能手动调用。",
+      "prerequisites": ["ownership.drop.scope_end", "trait.impl.for_local_type"],
+      "misconceptions": ["以为可以直接调用 x.drop() 提前释放"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.rc.shared_ownership_count",
+      "title": { "zh": "Rc 共享所有权计数", "en": "Rc shares ownership via counting" },
+      "summary": "Rc<T> 用引用计数允许多个所有者，最后一个所有者 drop 时释放数据。",
+      "prerequisites": ["smartptr.box.heap_allocate"],
+      "misconceptions": ["以为 Rc 允许多个 &mut", "以为 Rc 能跨线程使用"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.rc.not_thread_safe",
+      "title": { "zh": "Rc 非线程安全", "en": "Rc is not thread-safe" },
+      "summary": "Rc 的计数非原子操作，不能 Send 到其他线程，跨线程需 Arc。",
+      "prerequisites": ["smartptr.rc.shared_ownership_count"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.refcell.single_owner_mutability",
+      "title": { "zh": "RefCell 单所有者内部可变性", "en": "RefCell gives interior mutability" },
+      "summary": "RefCell<T> 把借用检查推迟到运行时，允许在共享所有权下修改数据。",
+      "prerequisites": ["borrow.mutable.exclusive"],
+      "misconceptions": ["以为 RefCell 绕过了借用规则", "以为编译器不再检查 RefCell 的借用"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.refcell.runtime_borrow_panic",
+      "title": { "zh": "RefCell 运行时借用冲突 panic", "en": "RefCell panics on borrow conflicts" },
+      "summary": "borrow_mut 与已有借用冲突时在运行时 panic，而不是编译错误。",
+      "prerequisites": ["smartptr.refcell.single_owner_mutability"],
+      "misconceptions": ["以为借用规则只在编译期存在", "以为 RefCell 的 panic 可以靠编译器提前发现"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.weak.breaks_cycle",
+      "title": { "zh": "Weak 打破引用循环", "en": "Weak breaks reference cycles" },
+      "summary": "Weak<T> 不计入强引用，避免 Rc 循环造成内存泄漏，使用时需 upgrade。",
+      "prerequisites": ["smartptr.rc.shared_ownership_count"],
+      "misconceptions": ["以为 Rust 的所有权系统保证绝不泄漏内存"],
+      "status": "draft"
+    },
+    {
+      "id": "smartptr.cow.lazy_clone",
+      "title": { "zh": "Cow 写时克隆", "en": "Cow clones on write" },
+      "summary": "Cow<'a, B> 在只读场景借用、需要修改时才克隆，兼顾性能与所有权。",
+      "prerequisites": ["ownership.clone.deep_copy_explicit", "lifetime.annotation.function_relation"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.thread.spawn_requires_move_or_static",
+      "title": { "zh": "spawn 要求 'static 或 move", "en": "spawn requires 'static captures" },
+      "summary": "thread::spawn 的闭包必须拥有其环境（move）或仅含 'static 引用，防止悬垂。",
+      "prerequisites": ["closure.move_keyword_forces_ownership"],
+      "misconceptions": ["以为可以把栈上局部变量的引用传给新线程"],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.thread.move_closure_ownership",
+      "title": { "zh": "move 闭包转移环境所有权", "en": "move closures transfer ownership to threads" },
+      "summary": "配合 move 把数据所有权交给新线程，原线程不可再用。",
+      "prerequisites": ["concurrency.thread.spawn_requires_move_or_static"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.thread.join_blocks",
+      "title": { "zh": "join 等待线程结束", "en": "join blocks until completion" },
+      "summary": "JoinHandle::join 阻塞当前线程并取回结果，不 join 线程会被 detach。",
+      "prerequisites": ["concurrency.thread.spawn_requires_move_or_static"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.channel.mpsc_send_moves",
+      "title": { "zh": "channel send 移动值", "en": "Channel send moves values" },
+      "summary": "mpsc 发送会移动值的所有权到接收方，发送方之后不可再用。",
+      "prerequisites": ["concurrency.thread.move_closure_ownership", "ownership.move.on_function_arg"],
+      "misconceptions": ["以为发送的是引用或副本"],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.arc.atomic_shared_ownership",
+      "title": { "zh": "Arc 原子共享所有权", "en": "Arc is atomic Rc" },
+      "summary": "Arc<T> 用原子计数实现跨线程共享所有权，可安全 Send。",
+      "prerequisites": ["smartptr.rc.shared_ownership_count", "concurrency.thread.spawn_requires_move_or_static"],
+      "misconceptions": ["以为 Arc 内的数据可以随便修改"],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.mutex.lock_returns_guard",
+      "title": { "zh": "lock 返回守卫", "en": "lock returns a guard" },
+      "summary": "Mutex::lock 返回 MutexGuard，通过 DerefMut 访问数据，编译器强制先加锁。",
+      "prerequisites": ["concurrency.arc.atomic_shared_ownership"],
+      "misconceptions": ["以为可以在不持有锁的情况下访问 Mutex 内数据"],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.mutex.guard_drop_unlocks",
+      "title": { "zh": "守卫 drop 自动解锁", "en": "Guard drop unlocks" },
+      "summary": "MutexGuard 离开作用域即释放锁，作用域设计直接决定持锁时长。",
+      "prerequisites": ["concurrency.mutex.lock_returns_guard", "ownership.drop.scope_end"],
+      "misconceptions": ["不知道临时表达式会延长守卫的生命周期（如 if let 锁残留）"],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.mutex.poisoned_on_panic",
+      "title": { "zh": "Mutex 中毒", "en": "Mutex poisoning" },
+      "summary": "持锁线程 panic 后 Mutex 被标记中毒，后续 lock 返回 Err 需显式处理。",
+      "prerequisites": ["concurrency.mutex.lock_returns_guard", "error.panic.unrecoverable_unwind"],
+      "misconceptions": ["不知道 lock().unwrap() 的 Err 来自哪里"],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.send.transfer_between_threads",
+      "title": { "zh": "Send 跨线程移动", "en": "Send marks transferable types" },
+      "summary": "实现 Send 的类型可以安全地把所有权转移到其他线程。",
+      "prerequisites": ["concurrency.thread.spawn_requires_move_or_static", "ownership.move.on_assignment"],
+      "misconceptions": ["以为所有类型都能跨线程移动", "不理解 Rc 为什么不是 Send"],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.sync.share_between_threads",
+      "title": { "zh": "Sync 跨线程共享引用", "en": "Sync marks shareable types" },
+      "summary": "实现 Sync 的类型其 &T 可在线程间共享，T: Sync 当且仅当 &T: Send。",
+      "prerequisites": ["concurrency.send.transfer_between_threads"],
+      "misconceptions": ["以为 Send 和 Sync 是同一个概念"],
+      "status": "draft"
+    },
+    {
+      "id": "concurrency.atomic.ordering_basics",
+      "title": { "zh": "原子类型与内存序基础", "en": "Atomics and ordering basics" },
+      "summary": "AtomicUsize 等提供无锁并发原语，Ordering 决定跨线程可见性保证。",
+      "prerequisites": ["concurrency.sync.share_between_threads"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "error.panic.unrecoverable_unwind",
+      "title": { "zh": "panic! 不可恢复展开", "en": "panic! unwinds" },
+      "summary": "panic! 展开栈并逐层 drop，代表不可恢复的 bug 级错误。",
+      "prerequisites": [],
+      "misconceptions": ["把 panic 当常规错误处理手段"],
+      "status": "draft"
+    },
+    {
+      "id": "error.option.question_mark_early_return",
+      "title": { "zh": "Option 上的 ? 提前返回", "en": "? on Option early-returns None" },
+      "summary": "Option 上的 ? 在 None 时从函数提前返回 None，简化链式取值。",
+      "prerequisites": ["enum.option.replaces_null"],
+      "misconceptions": ["以为 ? 能用在返回类型不含 Option/Result 的函数里"],
+      "status": "draft"
+    },
+    {
+      "id": "error.result.question_mark_propagates",
+      "title": { "zh": "Result 上的 ? 传播错误", "en": "? propagates errors" },
+      "summary": "Result 上的 ? 自动解包 Ok 或把 Err 转换后返回给调用方。",
+      "prerequisites": ["enum.result.must_use", "error.option.question_mark_early_return"],
+      "misconceptions": ["以为 ? 会 panic", "不理解 ? 背后的 From 转换"],
+      "status": "draft"
+    },
+    {
+      "id": "error.result.map_err_context",
+      "title": { "zh": "map_err 附加上下文", "en": "map_err adds context" },
+      "summary": "map_err 在传播前转换错误类型、补充上下文信息。",
+      "prerequisites": ["error.result.question_mark_propagates"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "error.custom.impl_error_trait",
+      "title": { "zh": "自定义错误类型", "en": "Custom error types" },
+      "summary": "通过实现 Display + Error（或 thiserror）定义可组合的领域错误。",
+      "prerequisites": ["trait.impl.for_local_type", "enum.result.must_use"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "error.unwrap_expect_panic_message",
+      "title": { "zh": "unwrap/expect 与 panic 信息", "en": "unwrap/expect panic on failure" },
+      "summary": "unwrap 在 None/Err 时 panic，expect 允许自定义 panic 消息，适用于原型和不变量断言。",
+      "prerequisites": ["error.panic.unrecoverable_unwind", "enum.option.replaces_null"],
+      "misconceptions": ["以为 unwrap 是处理错误的正规方式"],
+      "status": "draft"
+    },
+    {
+      "id": "string.string_owned_vs_str_slice",
+      "title": { "zh": "String 与 &str", "en": "String vs &str" },
+      "summary": "String 拥有堆上缓冲区，&str 是对 UTF-8 序列的借用视图。",
+      "prerequisites": ["borrow.shared.create"],
+      "misconceptions": ["以为 String 和 &str 可以无成本随意互换", "以为函数字符串参数用 String 类型最灵活"],
+      "status": "draft"
+    },
+    {
+      "id": "string.utf8_bytes_not_chars",
+      "title": { "zh": "UTF-8 字节不等于字符", "en": "UTF-8 bytes are not chars" },
+      "summary": "一个字符可能占 1-4 字节，字节下标与字符下标不对应。",
+      "prerequisites": ["string.string_owned_vs_str_slice"],
+      "misconceptions": ["以为第 n 个字节就是第 n 个字符"],
+      "status": "draft"
+    },
+    {
+      "id": "string.no_direct_indexing",
+      "title": { "zh": "字符串禁止下标索引", "en": "No direct string indexing" },
+      "summary": "s[i] 不被允许，需用 chars()、bytes() 或切片语法显式选择语义。",
+      "prerequisites": ["string.utf8_bytes_not_chars"],
+      "misconceptions": ["以为 s[0] 能取第一个字符"],
+      "status": "draft"
+    },
+    {
+      "id": "string.concat_ownership",
+      "title": { "zh": "拼接与所有权转移", "en": "Concatenation moves the left operand" },
+      "summary": "String + &str 移动左操作数并复用其缓冲区，左操作数之后不可再用。",
+      "prerequisites": ["string.string_owned_vs_str_slice", "ownership.move.on_assignment"],
+      "misconceptions": ["以为 + 两边都还能继续用", "以为 + 两边类型可以都是 String"],
+      "status": "draft"
+    },
+    {
+      "id": "slice.range_borrow",
+      "title": { "zh": "切片是对序列的借用", "en": "Slices borrow a view" },
+      "summary": "&[T] 是对数组/Vec 连续区间的借用，不拥有元素。",
+      "prerequisites": ["borrow.shared.create"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "slice.split_methods",
+      "title": { "zh": "切片分割方法", "en": "Slice splitting methods" },
+      "summary": "split_at/split_at_mut/chunks 等把切片拆成不重叠的子切片。",
+      "prerequisites": ["slice.range_borrow", "borrow.mutable.exclusive"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "collections.vec.growth_amortized",
+      "title": { "zh": "Vec 动态扩容", "en": "Vec grows amortized" },
+      "summary": "push 在容量不足时按倍数扩容，均摊 O(1)，扩容会使旧指针失效。",
+      "prerequisites": [],
+      "misconceptions": ["以为保存了元素引用后 push 仍然安全"],
+      "status": "draft"
+    },
+    {
+      "id": "collections.vec.index_panics_vs_get_option",
+      "title": { "zh": "下标 panic vs get 返回 Option", "en": "Indexing panics, get returns Option" },
+      "summary": "v[i] 越界 panic，v.get(i) 返回 Option 供调用方处理。",
+      "prerequisites": ["collections.vec.growth_amortized", "enum.option.replaces_null"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "collections.hashmap.ownership_of_keys",
+      "title": { "zh": "HashMap 键的所有权", "en": "HashMap key ownership" },
+      "summary": "insert 移动键和值的所有权，借用键需保证引用寿命覆盖 map。",
+      "prerequisites": ["ownership.move.on_function_arg"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "collections.hashmap.entry_api",
+      "title": { "zh": "entry API 原地更新", "en": "entry API in-place updates" },
+      "summary": "entry().or_insert() 等 API 把查找与插入合并为一次哈希操作。",
+      "prerequisites": ["collections.hashmap.ownership_of_keys", "enum.variant.associated_data"],
+      "misconceptions": ["先用 contains_key 再 insert，写两次查找的冗余代码"],
+      "status": "draft"
+    },
+    {
+      "id": "collections.hashmap.custom_hash",
+      "title": { "zh": "自定义键与 Hash/Eq", "en": "Custom keys need Hash + Eq" },
+      "summary": "自定义类型做键必须一致地实现 Hash 与 Eq，违反契约导致查找失败。",
+      "prerequisites": ["collections.hashmap.ownership_of_keys", "trait.impl.for_local_type"],
+      "misconceptions": ["以为 Hash 和 Eq 可以不一致"],
+      "status": "draft"
+    },
+    {
+      "id": "module.tree.privacy_default",
+      "title": { "zh": "模块默认私有", "en": "Modules are private by default" },
+      "summary": "项默认对外部模块不可见，pub 逐层开放可见性。",
+      "prerequisites": [],
+      "misconceptions": ["以为 pub struct 的字段自动公开"],
+      "status": "draft"
+    },
+    {
+      "id": "module.use.path_idiom",
+      "title": { "zh": "use 引入路径惯例", "en": "use path idioms" },
+      "summary": "函数引入到父模块、类型引入到本身的惯例，以及 as 重命名。",
+      "prerequisites": ["module.tree.privacy_default"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "module.pub_restricted",
+      "title": { "zh": "受限可见性", "en": "Restricted visibility" },
+      "summary": "pub(crate)/pub(super)/pub(in path) 精确控制可见范围。",
+      "prerequisites": ["module.tree.privacy_default"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "async.future.lazy_poll",
+      "title": { "zh": "Future 惰性轮询", "en": "Futures are inert until polled" },
+      "summary": "async 块/函数只构造状态机，不被 poll 就不执行任何代码。",
+      "prerequisites": ["trait.impl.for_local_type"],
+      "misconceptions": ["以为调用 async fn 就开始执行了"],
+      "status": "draft"
+    },
+    {
+      "id": "async.await.needs_runtime",
+      "title": { "zh": "await 需要运行时驱动", "en": "await needs a runtime" },
+      "summary": "Future 需要 tokio 等执行器驱动，main 不能直接 async（需运行时宏）。",
+      "prerequisites": ["async.future.lazy_poll"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "async.borrow_across_await",
+      "title": { "zh": "跨 await 持有借用", "en": "Borrows held across await" },
+      "summary": "跨 .await 存活的借用会被存入状态机，触发与普通代码不同的生命周期约束。",
+      "prerequisites": ["async.future.lazy_poll", "borrow.nll.last_use"],
+      "misconceptions": ["以为借用检查在 async 块里被放宽"],
+      "status": "draft"
+    },
+    {
+      "id": "async.send_bound_spawn",
+      "title": { "zh": "spawn 的 Send 约束", "en": "spawn requires Send futures" },
+      "summary": "tokio::spawn 要求 Future: Send，跨 await 持有非 Send 值会导致编译失败。",
+      "prerequisites": ["async.future.lazy_poll", "concurrency.send.transfer_between_threads"],
+      "misconceptions": ["不理解为什么跨 await 持有 Rc/RefCell 引用会报错"],
+      "status": "draft"
+    },
+    {
+      "id": "unsafe.raw_pointer.deref_requires_unsafe",
+      "title": { "zh": "解引用裸指针需 unsafe", "en": "Raw pointer deref requires unsafe" },
+      "summary": "*const T/*mut T 的解引用只能在 unsafe 块中，编译器不再保证其有效性。",
+      "prerequisites": ["borrow.shared.create"],
+      "misconceptions": ["以为裸指针和引用只是写法不同"],
+      "status": "draft"
+    },
+    {
+      "id": "unsafe.fn.contract",
+      "title": { "zh": "unsafe fn 的契约", "en": "unsafe fn contracts" },
+      "summary": "unsafe fn 把安全责任转移给调用方，调用本身也需要 unsafe。",
+      "prerequisites": ["unsafe.raw_pointer.deref_requires_unsafe"],
+      "misconceptions": ["以为函数体里有 unsafe 操作就该把函数标成 unsafe fn"],
+      "status": "draft"
+    },
+    {
+      "id": "unsafe.split_borrow.with_ptr",
+      "title": { "zh": "裸指针绕过借用拆分", "en": "Raw pointers bypass borrow splitting" },
+      "summary": "裸指针不服从借用规则，需自行证明不重叠（如 split_at_mut 的实现）。",
+      "prerequisites": ["unsafe.fn.contract", "borrow.split.slice_methods"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "unsafe.ub_rules_still_apply",
+      "title": { "zh": "unsafe 内 UB 规则仍生效", "en": "UB rules still apply in unsafe" },
+      "summary": "unsafe 只是关闭部分检查，别名、生命周期、数据有效性等规则仍需人工保证。",
+      "prerequisites": ["unsafe.fn.contract"],
+      "misconceptions": ["以为 unsafe 块里什么都可以做", "以为编译通过就代表没有 UB"],
+      "status": "draft"
+    },
+    {
+      "id": "macro.decl.macro_rules_pattern",
+      "title": { "zh": "macro_rules! 模式匹配", "en": "macro_rules! pattern matching" },
+      "summary": "声明宏按模式匹配输入并展开，支持重复与分片断言语法。",
+      "prerequisites": [],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "macro.hygiene.basics",
+      "title": { "zh": "宏卫生基础", "en": "Macro hygiene basics" },
+      "summary": "宏内引入的标识符与外部隔离，避免意外捕获变量名。",
+      "prerequisites": ["macro.decl.macro_rules_pattern"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0384.reassign_immutable",
+      "title": { "zh": "读懂 E0384 不可变绑定重新赋值", "en": "Read E0384 diagnostics" },
+      "summary": "能定位 E0384 中的赋值点并给出加 mut、换新绑定或重构的修复方案。",
+      "prerequisites": ["ownership.binding.immutability_default"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0382.use_after_move",
+      "title": { "zh": "读懂 E0382 移动后使用", "en": "Read E0382 diagnostics" },
+      "summary": "能从 E0382 中找出移动点与使用点，并用借用、clone 或重构修复。",
+      "prerequisites": ["ownership.move.use_after_move_error"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0499.multiple_mutable",
+      "title": { "zh": "读懂 E0499 多重可变借用", "en": "Read E0499 diagnostics" },
+      "summary": "能识别两个 &mut 的存活区间重叠点，并通过缩短借用或重借用修复。",
+      "prerequisites": ["borrow.mutable.exclusive"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0502.mut_shared_conflict",
+      "title": { "zh": "读懂 E0502 可变与共享冲突", "en": "Read E0502 diagnostics" },
+      "summary": "能判断冲突双方的借用区间，给出重排语句或拆分借用的最小修复。",
+      "prerequisites": ["borrow.mutable.conflict_with_shared"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0506.assign_while_borrowed",
+      "title": { "zh": "读懂 E0506 借用期间重新赋值", "en": "Read E0506 diagnostics" },
+      "summary": "识别对已被借用绑定的重新赋值，理解赋值需要先独占访问。",
+      "prerequisites": ["borrow.mutable.conflict_with_shared"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0507.move_out_of_borrow",
+      "title": { "zh": "读懂 E0507 移出借用内容", "en": "Read E0507 diagnostics" },
+      "summary": "理解不能从 &T 移出值的原因，并选择 clone、复制或改用引用的修复。",
+      "prerequisites": ["borrow.shared.create", "ownership.move.use_after_move_error"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0597.dropped_while_borrowed",
+      "title": { "zh": "读懂 E0597 值在借用期间被 drop", "en": "Read E0597 diagnostics" },
+      "summary": "能分析值 drop 点早于借用结束点的场景，调整声明顺序或作用域。",
+      "prerequisites": ["borrow.nll.last_use", "ownership.drop.scope_end"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0515.return_local_ref",
+      "title": { "zh": "读懂 E0515 返回局部引用", "en": "Read E0515 diagnostics" },
+      "summary": "识别返回指向局部数据引用的错误，改为返回值、取参数引用或使用 'static 数据。",
+      "prerequisites": ["borrow.return_local_ref_forbidden"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0106.missing_lifetime",
+      "title": { "zh": "读懂 E0106 缺少生命周期标注", "en": "Read E0106 diagnostics" },
+      "summary": "理解省略规则不适用的场景，正确补全输入输出生命周期关系。",
+      "prerequisites": ["lifetime.annotation.function_relation"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "diag.e0277.trait_bound_unsatisfied",
+      "title": { "zh": "读懂 E0277 trait 约束未满足", "en": "Read E0277 diagnostics" },
+      "summary": "能从 E0277 定位缺失的 trait 实现或约束，并选择实现 trait、加约束或换类型。",
+      "prerequisites": ["generic.bound.inline_vs_where"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "panic.index_out_of_bounds",
+      "title": { "zh": "判断越界索引 panic", "en": "Predict index-out-of-bounds panics" },
+      "summary": "能判断下标访问是否会越界 panic，并与 get 的 Option 语义区分。",
+      "prerequisites": ["collections.vec.index_panics_vs_get_option"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "panic.unwrap_on_none_err",
+      "title": { "zh": "判断 unwrap panic", "en": "Predict unwrap panics" },
+      "summary": "能追踪 Option/Result 的取值路径，判断 unwrap 是否会 panic。",
+      "prerequisites": ["error.unwrap_expect_panic_message"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "panic.refcell_active_mut_borrow",
+      "title": { "zh": "判断 RefCell 借用 panic", "en": "Predict RefCell borrow panics" },
+      "summary": "能追踪 borrow/borrow_mut 的存活区间，判断运行时是否冲突 panic。",
+      "prerequisites": ["smartptr.refcell.runtime_borrow_panic"],
+      "misconceptions": ["以为 RefCell 的冲突会在编译期报出"],
+      "status": "draft"
+    },
+    {
+      "id": "panic.overflow_debug_mode",
+      "title": { "zh": "debug 模式算术溢出 panic", "en": "Debug overflow panics" },
+      "summary": "debug 构建下整数溢出 panic，release 默认回绕，需用 wrapping_* 等显式选择。",
+      "prerequisites": [],
+      "misconceptions": ["以为溢出行为在所有构建模式下一致"],
+      "status": "draft"
+    },
+    {
+      "id": "convert.from_into_reciprocal",
+      "title": { "zh": "From/Into 互易实现", "en": "From/Into reciprocity" },
+      "summary": "实现 From 自动获得 Into，惯例上只实现 From。",
+      "prerequisites": ["trait.impl.for_local_type"],
+      "misconceptions": ["两个都手写导致实现不一致"],
+      "status": "draft"
+    },
+    {
+      "id": "convert.try_from_fallible",
+      "title": { "zh": "TryFrom 可失败转换", "en": "TryFrom for fallible conversions" },
+      "summary": "可能失败的转换用 TryFrom 返回 Result，而不是 panic 或静默截断。",
+      "prerequisites": ["convert.from_into_reciprocal", "enum.result.must_use"],
+      "misconceptions": [],
+      "status": "draft"
+    },
+    {
+      "id": "convert.as_primitive_cast",
+      "title": { "zh": "as 原生类型转换", "en": "as casts primitives" },
+      "summary": "as 做无检查的数值截断/转换，溢出与精度丢失不发生 panic。",
+      "prerequisites": [],
+      "misconceptions": ["以为 as 转换溢出会 panic"],
+      "status": "draft"
+    },
+    {
+      "id": "shadowing.new_binding_vs_mut",
+      "title": { "zh": "遮蔽创建新绑定 vs mut 修改", "en": "Shadowing creates new bindings" },
+      "summary": "let 同名遮蔽创建全新绑定（可换类型），与 mut 原地修改是两种不同机制。",
+      "prerequisites": ["ownership.binding.mut_modifier"],
+      "misconceptions": ["以为遮蔽就是修改原变量"],
+      "status": "draft"
+    }
+  ]
+}
